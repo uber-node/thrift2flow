@@ -205,7 +205,7 @@ export class ThriftFileConverter {
 
   generateFunction = (fn: FunctionDefinition) =>
     `${fn.id.name}: (${
-      fn.fields.length ? this.generateStructContents([...fn.fields]) : ''
+      fn.fields.length ? this.generateStructContents([...fn.fields], true) : ''
     }) => ${this.convertType(fn.returns)}`;
 
   generateTypedef = (def: Typedef) => {
@@ -379,18 +379,18 @@ export class ThriftFileConverter {
   generateStruct = ({id: {name}, fields}: Struct | Exception) =>
     `export type ${id(name)} = ${this.generateStructContents(fields)};`;
 
-  generateStructContents = (fields: Array<Field>) =>
-    `{|${fields
+  generateStructContents = (fields: Array<Field>, readOnly?: boolean) =>
+   `${readOnly === true ? '$ReadOnly<' : ''}{|${fields
       .map((field: Field) => {
         const valueType = field.valueType;
         let optionalPrefix = this.isOptional(field) ? '?' : '';
         let value =
           valueType.type === 'Identifier'
             ? this.getIdentifier(valueType.name, 'type')
-            : this.convertType(valueType);
-        return `${field.name}${optionalPrefix}: ${optionalPrefix}${value};`;
+            : this.convertType(valueType, null, readOnly);
+        return `${field.name}${optionalPrefix}:${optionalPrefix}${value};`;
       })
-      .join('\n')}|}`;
+      .join('\n')}|}${readOnly === true ? '>' : ''}`;
 
   generateUnion = ({id: {name}, fields}: Union) =>
     `export type ${id(name)} = ${this.generateUnionContents(fields)};`;
@@ -574,7 +574,7 @@ export class ThriftFileConverter {
     return false;
   };
 
-  convertBaseType(t: AstNode, def?: Definition): string | void {
+  convertBaseType(t: AstNode, def?: ?Definition): string | void {
     if (t.type !== 'BaseType') {
       return undefined;
     }
@@ -622,7 +622,7 @@ export class ThriftFileConverter {
     return undefined;
   }
 
-  convertMapType(t: AstNode, def?: Definition): string | void {
+  convertMapType(t: AstNode, def?: ?Definition, readOnly?: ?boolean): string | void {
     if (t.type === 'Map' && def) {
       const valueType = this.convertType(t.valueType);
       if (def.type === 'Const' && def.value.type === 'ConstMap') {
@@ -644,7 +644,7 @@ export class ThriftFileConverter {
               );
             }
           } else if (entry.key.type === 'Literal') {
-            return `'${entry.key.value}': ${valueType}`;
+            return readOnly === true ? `'${entry.key.value}': $ReadOnly<${valueType}>` : `'${entry.key.value}': ${valueType}`;
           } else {
             throw new Error('unsupported');
           }
@@ -668,13 +668,13 @@ export class ThriftFileConverter {
     return this.identifiersTable[def.name].type === 'Enum';
   }
 
-  convertType(t: AstNode, def?: Definition): string {
+  convertType(t: AstNode, def?: ?Definition, readOnly?: boolean): string {
     if (!t) {
       throw new Error(`Assertion failed. t is not defined.`);
     }
     let type: string | void =
       this.convertArrayType(t) ||
-      this.convertMapType(t, def) ||
+      this.convertMapType(t, def, readOnly) ||
       this.convertEnumType(t) ||
       this.convertBaseType(t, def);
     if (type !== undefined) {
